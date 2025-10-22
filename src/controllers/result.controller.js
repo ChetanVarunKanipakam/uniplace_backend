@@ -1,21 +1,32 @@
 import Result from "../models/Result.js";
 import User from "../models/User.js";
 
+import Notification from '../models/Notification.js'; // Adjust path
+// Adjust path
+
 export const publishResults = async (req, res) => {
   try {
-    console.log(req.user);
-    if (req.user?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
-    console.log(req.body);
+    if (req.user?.role !== "admin") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     const { companyId, selectedStudents } = req.body;
     if (!companyId || !Array.isArray(selectedStudents)) {
       return res.status(400).json({ message: "companyId and selectedStudents array required" });
     }
     const result = await Result.findOneAndUpdate(
-      { companyId },
+      { companyId }, // Assuming this is the Job ID
       { selectedStudents },
       { upsert: true, new: true }
     );
-    console.log(result)
+
+    const notifications = selectedStudents.map(studentId => ({
+      recipient: studentId,
+      title: 'Congratulations! You are Shortlisted',
+      message: `You have been shortlisted for the next round.`,
+      type: 'shortlist',
+    }));
+    await Notification.insertMany(notifications);
+
     res.json({ message: "Results published", result });
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -53,7 +64,7 @@ export const getResults1 = async (req, res) => {
           select: "name",
         },
       })
-      .populate("selectedStudents", "_id name email branch cgpa");
+      .populate("selectedStudents", "_id name email branch cgpa").sort({ createdAt: -1 });
 
     if (!results || results.length === 0) {
       return res.status(200).json({ results: [] });
@@ -67,7 +78,7 @@ export const getResults1 = async (req, res) => {
       const isSelected = result.selectedStudents.some(
         (student) => student._id.toString() === userId.toString()
       );
-
+      
       return {
         jobId: job?._id,
         jobRole: job?.role || "Unknown Role",
