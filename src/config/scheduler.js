@@ -40,7 +40,7 @@ const dailyNotificationJob = cron.schedule('0 0 * * *', async () => {
         });
 
         if (jobsDueToday.length > 0) {
-            const recruiters = await User.find({ role: 'recruiter' });
+            const recruiters = await User.find({});
             for (const job of jobsDueToday) {
                 for (const recruiter of recruiters) {
                     await createNotificationIfNotExists({
