@@ -5,7 +5,7 @@ import express from "express";
 import connectDB from "./config/db.js";
 
 import cors from "cors";
-
+import path from "path";
 import authRoutes from "./routes/auth.routes.js";
 import companyRoutes from "./routes/company.routes.js";
 import scheduleRoutes from "./routes/schedule.routes.js";
@@ -30,7 +30,9 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use("/uploads",express.static("uploads"));
+const __dirname = path.resolve();
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // mount routes
 app.use("/api/auth", authRoutes);
 app.use("/api/companies", companyRoutes);
