@@ -2,43 +2,50 @@ import express from "express";
 import { getCompanies, addCompany, deleteCompany } from "../controllers/company.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+import dotenv from "dotenv";
+
+// Load env vars
+dotenv.config();
 
 const router = express.Router();
 
-// Resolve project root directory (for ES modules)
-const __dirname = path.resolve();
+// 1. Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-// Absolute path to uploads folder
-const uploadDir = path.join(__dirname, "uploads");
-
-// Ensure uploads folder exists at runtime
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir); // use absolute path
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname));
+// 2. Configure Storage (Optimized for Images/Logos)
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "companies", // Folder name in Cloudinary
+    allowed_formats: ["jpg", "png", "jpeg", "webp"], // Allow image formats
+    // resource_type: "auto", // Uncomment this if you plan to upload PDFs here too
   },
 });
 
 const upload = multer({ storage });
 
+// 3. Upload Route
 router.post("/upload", upload.single("file"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: "No file uploaded" });
   }
 
-  // This is the URL path the client will use
-  const filePath = `/uploads/${req.file.filename}`;
-  res.status(200).json({ url: filePath });
+  // Cloudinary returns the full HTTP URL in req.file.path
+  const fileUrl = req.file.path;
+
+  res.status(200).json({ 
+    message: "Company image uploaded successfully",
+    url: fileUrl 
+  });
 });
 
+// 4. Other Routes
 router.get("/", getCompanies);
 router.post("/", authMiddleware, addCompany);
 router.delete("/:id", authMiddleware, deleteCompany);
