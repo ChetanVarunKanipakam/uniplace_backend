@@ -86,10 +86,11 @@ export const getResults1 = async (req, res) => {
         companyName: company?.name || "Unknown Company",
         isSelected,
       };}
+      return null;
     });
-    console.log(userResults)
-    userResults.filter((result)=>result != null);
-    return res.status(200).json({ results: userResults });
+    const filteredResults = userResults.filter((r) => r !== null);
+
+    return res.status(200).json({ results: filteredResults });
   } catch (err) {
     console.error("Error in getResults:", err);
     res.status(500).json({ message: err.message });
