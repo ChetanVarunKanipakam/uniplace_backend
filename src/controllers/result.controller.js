@@ -88,6 +88,7 @@ export const getResults1 = async (req, res) => {
       };}
     });
     console.log(userResults)
+    userResults.filter((result)=>result != null);
     return res.status(200).json({ results: userResults });
   } catch (err) {
     console.error("Error in getResults:", err);
