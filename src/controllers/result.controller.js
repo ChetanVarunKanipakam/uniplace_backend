@@ -6,9 +6,9 @@ import Notification from '../models/Notification.js'; // Adjust path
 
 export const publishResults = async (req, res) => {
   try {
-    if (req.user?.role !== "admin") {
-      return res.status(403).json({ message: "Forbidden" });
-    }
+    // if (req.user?.role !== "admin") {
+    //   return res.status(403).json({ message: "Forbidden" });
+    // }
     const { companyId, selectedStudents } = req.body;
     if (!companyId || !Array.isArray(selectedStudents)) {
       return res.status(400).json({ message: "companyId and selectedStudents array required" });
