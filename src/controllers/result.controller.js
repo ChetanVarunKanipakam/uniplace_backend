@@ -78,14 +78,14 @@ export const getResults1 = async (req, res) => {
       const isSelected = result.selectedStudents.some(
         (student) => student._id.toString() === userId.toString()
       );
-      
+      if(company?.name){
       return {
         jobId: job?._id,
         jobRole: job?.role || "Unknown Role",
         companyId: company?._id,
         companyName: company?.name || "Unknown Company",
         isSelected,
-      };
+      };}
     });
     console.log(userResults)
     return res.status(200).json({ results: userResults });
