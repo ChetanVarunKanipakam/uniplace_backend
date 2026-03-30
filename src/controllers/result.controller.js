@@ -1,8 +1,7 @@
 import Result from "../models/Result.js";
 import User from "../models/User.js";
 
-import Notification from '../models/Notification.js'; // Adjust path
-// Adjust path
+
 import Application from "../models/Application.js";
 import Job from "../models/Job.js";
 import Notification from "../models/Notification.js";
@@ -110,7 +109,6 @@ export const getResults = async (req, res) => {
   }
 };
 
-import Job from "../models/Job.js";
 import Company from "../models/Company.js";
 
 export const getResults1 = async (req, res) => {
