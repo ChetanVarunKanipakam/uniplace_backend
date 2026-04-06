@@ -8,7 +8,9 @@ const userSchema = new mongoose.Schema({
   cgpa: { type: Number },
   branch: { type: String },
   resumeUrl: { type: String },
-  company: {type: mongoose.Schema.Types.ObjectId, ref: "Company"}
+  company: { type: mongoose.Schema.Types.ObjectId, ref: "Company" },
+  resumeScore: { type: Number },     
+  resumeReview: { type: String }     
 }, { timestamps: true });
 
 export default mongoose.model("User", userSchema);

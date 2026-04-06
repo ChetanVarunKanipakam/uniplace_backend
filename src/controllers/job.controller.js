@@ -1,6 +1,31 @@
 import Job from "../models/Job.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
+
+
+export const updateJob = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    
+    // Check if the user is authorized (optional: verify company matches)
+    if (!["recruiter", "admin"].includes(req.user?.role)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const updatedJob = await Job.findByIdAndUpdate(
+      jobId, 
+      req.body, 
+      { new: true } // Returns the updated document
+    );
+
+    if (!updatedJob) return res.status(404).json({ message: "Job not found" });
+
+    res.json({ message: "Job updated successfully", job: updatedJob });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
 export const postJob = async (req, res) => {
   try {
     // req.body should include: { role, ..., rounds: [{name: "Aptitude", roundNumber: 1, ...}] }
