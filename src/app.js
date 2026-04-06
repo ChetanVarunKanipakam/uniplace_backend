@@ -17,6 +17,8 @@ import candidateRoutes from "./routes/candidate.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import userRoutes from "./routes/user.routes.js";
+import analyticsRoutes from "./routes/analytics.routes.js";
+
 import { v2 as cloudinary } from "cloudinary";
 connectDB();
 console.log("ENV CHECK:", process.env.CLOUDINARY_NAME, process.env.CLOUDINARY_KEY);
@@ -45,6 +47,7 @@ app.use("/api/candidates", candidateRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/resumes", uploadRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/analytics", analyticsRoutes);
 app.get("/", (req, res) => res.send("University Placement API"));
 
 export default app;
