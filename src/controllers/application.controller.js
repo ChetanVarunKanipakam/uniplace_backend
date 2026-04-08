@@ -27,9 +27,47 @@ export const applyToCompany = async (req, res) => {
   }
 };
 
-// Add this to your controllers/application.controller.js
 
-// Fetch applications for the currently logged-in student
+export const getMatchScore = async (req, res) => {
+  try {
+    const match = await MatchScore.findOne({ studentId: req.user.id, jobId: req.params.jobId });
+    if (!match) return res.status(200).json({ matchPercentage: null });
+    res.json({ matchPercentage: match.matchPercentage });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Calculate (or recalculate) match score
+export const calculateMatchScore = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { jobId } = req.params;
+
+    const user = await User.findById(studentId);
+    if (!user || !user.resumeUrl) {
+      return res.status(400).json({ message: "Please upload your resume in the profile section first." });
+    }
+
+    const job = await Job.findById(jobId);
+    if (!job) return res.status(404).json({ message: "Job not found" });
+
+    // 🧠 MOCK AI MATCHING ALGORITHM (Generates score between 60% and 98%)
+    // Replace this later with a real AI prompt comparing user.resumeUrl text with job.description
+    const score = Math.floor(Math.random() * (98 - 60 + 1)) + 60;
+
+    const match = await MatchScore.findOneAndUpdate(
+      { studentId, jobId },
+      { matchPercentage: score },
+      { upsert: true, new: true }
+    );
+
+    res.json({ matchPercentage: match.matchPercentage, message: "Match calculated successfully!" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 export const getStudentApplications = async (req, res) => {
   try {
     const studentId = req.user.id; // Comes from authMiddleware

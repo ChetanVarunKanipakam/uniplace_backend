@@ -3,10 +3,14 @@ import {
   applyToCompany, 
   getApplicationsByCompany, 
   updateApplicationStatus,
-  getStudentApplications // ✅ Make sure to implement this in controller
+  getStudentApplications
 } from "../controllers/application.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
+import { getMatchScore, calculateMatchScore } from "../controllers/application.controller.js";
 
+
+router.get("/match/:jobId", authMiddleware, getMatchScore);
+router.post("/match/:jobId", authMiddleware, calculateMatchScore);
 const router = express.Router();
 
 // Student routes
