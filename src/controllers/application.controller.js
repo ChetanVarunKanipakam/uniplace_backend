@@ -2,7 +2,7 @@ import Application from "../models/Application.js";
 import User from "../models/User.js";
 import Company from "../models/Company.js";
 import MatchScore from "../models/MatchScore.js";
-
+import Job from "../models/Job.js";
 export const applyToCompany = async (req, res) => {
   try {
     const studentId = req.user?.id;
