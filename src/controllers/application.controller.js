@@ -1,8 +1,12 @@
 import Application from "../models/Application.js";
 import User from "../models/User.js";
 import Company from "../models/Company.js";
+import Job from "../models/Job.js"; 
 import MatchScore from "../models/MatchScore.js";
-import Job from "../models/Job.js";
+import { GoogleGenAI, Type } from "@google/genai";
+import axios from "axios";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 export const applyToCompany = async (req, res) => {
   try {
     const studentId = req.user?.id;
@@ -52,10 +56,58 @@ export const calculateMatchScore = async (req, res) => {
     const job = await Job.findById(jobId);
     if (!job) return res.status(404).json({ message: "Job not found" });
 
-    // 🧠 MOCK AI MATCHING ALGORITHM (Generates score between 60% and 98%)
-    // Replace this later with a real AI prompt comparing user.resumeUrl text with job.description
-    const score = Math.floor(Math.random() * (98 - 60 + 1)) + 60;
+    let score = 0;
 
+    try {
+      // 1. Download Resume PDF
+      const pdfResp = await axios.get(user.resumeUrl, { responseType: 'arraybuffer' });
+      const pdfBase64 = Buffer.from(pdfResp.data).toString('base64');
+
+      // 2. Create the AI Prompt using Job specifics
+      const prompt = `
+        You are an expert technical recruiter. Compare the attached resume to the following job description.
+        Job Role: ${job.role}
+        Description: ${job.description}
+        Skills Required: ${job.skillsRequired.join(", ")}
+        Eligibility CGPA: ${job.eligibility?.cgpa || 'N/A'}
+
+        Calculate a highly accurate match percentage (0-100) based on how well the candidate's skills, experience, and projects align with the job requirements. Be realistic.
+      `;
+
+      // 3. Ask Gemini
+      const aiResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents:[
+          prompt,
+          {
+            inlineData: {
+              data: pdfBase64,
+              mimeType: "application/pdf"
+            }
+          }
+        ],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              matchPercentage: { type: Type.INTEGER }
+            },
+            required:["matchPercentage"]
+          }
+        }
+      });
+
+      // 4. Extract Score
+      const result = JSON.parse(aiResponse.text);
+      score = result.matchPercentage;
+
+    } catch (aiError) {
+      console.error("Gemini Matching Error:", aiError);
+      return res.status(500).json({ message: "AI matching failed. Please try again later." });
+    }
+
+    // 5. Save Score to Database
     const match = await MatchScore.findOneAndUpdate(
       { studentId, jobId },
       { matchPercentage: score },

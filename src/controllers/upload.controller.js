@@ -1,19 +1,51 @@
 import User from "../models/User.js";
+import { GoogleGenAI, Type } from "@google/genai";
+import axios from "axios";
 
-const calculateResumeScore = (resumeUrl) => {
-  // Generates a random score between 65 and 95
-  const score = Math.floor(Math.random() * (95 - 65 + 1)) + 65;
-  let review = "";
-  
-  if (score >= 85) {
-    review = "Excellent resume! Strong action verbs, great formatting, and clear metrics. You are highly likely to be shortlisted.";
-  } else if (score >= 75) {
-    review = "Good resume, but could use more quantifiable achievements. Try to highlight specific project impacts.";
-  } else {
-    review = "Needs improvement. Focus on specific technical skills, remove fluff, and ensure consistent formatting.";
+// Initialize Gemini Client
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+const calculateResumeScore = async (resumeUrl) => {
+  try {
+    // 1. Download the PDF from Cloudinary as a buffer
+    const response = await axios.get(resumeUrl, { responseType: 'arraybuffer' });
+    const pdfBase64 = Buffer.from(response.data).toString('base64');
+
+    // 2. Ask Gemini to analyze it
+    const aiResponse = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents:[
+        "You are an expert HR ATS (Applicant Tracking System). Analyze this resume. Give it an ATS score out of 100 based on formatting, action verbs, and clarity. Also provide a short review (max 3 sentences).",
+        {
+          inlineData: {
+            data: pdfBase64,
+            mimeType: "application/pdf"
+          }
+        }
+      ],
+      config: {
+        // Enforce strict JSON output
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            score: { type: Type.INTEGER },
+            review: { type: Type.STRING }
+          },
+          required: ["score", "review"]
+        }
+      }
+    });
+
+    // 3. Parse and return the result
+    const result = JSON.parse(aiResponse.text);
+    return { score: result.score, review: result.review };
+
+  } catch (error) {
+    console.error("Gemini AI Error:", error);
+    // Fallback in case of API failure
+    return { score: 70, review: "Resume uploaded, but AI analysis is currently unavailable." };
   }
-  
-  return { score, review };
 };
 
 export const uploadResume = async (req, res) => {
@@ -24,12 +56,12 @@ export const uploadResume = async (req, res) => {
 
     const resumeUrl = req.file.path; 
     
-    // ✅ 1. Calculate Score & Review
-    const { score, review } = calculateResumeScore(resumeUrl);
+    // ✅ 1. Wait for AI to Calculate Score & Review
+    const { score, review } = await calculateResumeScore(resumeUrl);
 
     // ✅ 2. Save resumeUrl, score, and review to the database
     const updatedUser = await User.findByIdAndUpdate(
-      req.user.id || req.user._id, // Handle token ID
+      req.user.id || req.user._id,
       { 
         resumeUrl: resumeUrl,
         resumeScore: score,
