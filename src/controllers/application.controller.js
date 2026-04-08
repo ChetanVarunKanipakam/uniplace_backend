@@ -1,7 +1,7 @@
 import Application from "../models/Application.js";
 import User from "../models/User.js";
 import Company from "../models/Company.js";
-
+import MatchScore from "../models/MatchScore.js";
 
 export const applyToCompany = async (req, res) => {
   try {
