@@ -5,6 +5,7 @@ import Job from "../models/Job.js";
 import MatchScore from "../models/MatchScore.js";
 import { GoogleGenAI, Type } from "@google/genai";
 import axios from "axios";
+import pdfParse from "pdf-parse";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 export const applyToCompany = async (req, res) => {
@@ -42,84 +43,132 @@ export const getMatchScore = async (req, res) => {
   }
 };
 
-// Calculate (or recalculate) match score
+
+
+
 export const calculateMatchScore = async (req, res) => {
   try {
     const studentId = req.user.id;
     const { jobId } = req.params;
 
+    // 🔹 1. Validate User
     const user = await User.findById(studentId);
     if (!user || !user.resumeUrl) {
-      return res.status(400).json({ message: "Please upload your resume in the profile section first." });
+      return res.status(400).json({
+        message: "Please upload your resume first.",
+      });
     }
 
+    // 🔹 2. Validate Job
     const job = await Job.findById(jobId);
-    if (!job) return res.status(404).json({ message: "Job not found" });
+    if (!job) {
+      return res.status(404).json({ message: "Job not found" });
+    }
 
     let score = 0;
 
     try {
-      // 1. Download Resume PDF
-      const pdfResp = await axios.get(user.resumeUrl, { responseType: 'arraybuffer' });
-      const pdfBase64 = Buffer.from(pdfResp.data).toString('base64');
+      // 🔹 3. Download Resume
+      console.log("Fetching Resume:", user.resumeUrl);
 
-      // 2. Create the AI Prompt using Job specifics
+      const pdfResp = await axios.get(user.resumeUrl, {
+        responseType: "arraybuffer",
+      });
+
+      // 🔹 4. Extract Text from PDF (IMPORTANT FIX)
+      const pdfData = await pdfParse(pdfResp.data);
+      const resumeText = pdfData.text;
+
+      if (!resumeText || resumeText.length < 20) {
+        return res.status(400).json({
+          message: "Resume content is too small or unreadable.",
+        });
+      }
+
+      // 🔹 5. Build Prompt
       const prompt = `
-        You are an expert technical recruiter. Compare the attached resume to the following job description.
-        Job Role: ${job.role}
-        Description: ${job.description}
-        Skills Required: ${job.skillsRequired.join(", ")}
-        Eligibility CGPA: ${job.eligibility?.cgpa || 'N/A'}
+You are an expert technical recruiter.
 
-        Calculate a highly accurate match percentage (0-100) based on how well the candidate's skills, experience, and projects align with the job requirements. Be realistic.
-      `;
+Compare the resume with the job description and return ONLY a JSON:
 
-      // 3. Ask Gemini
+{
+  "matchPercentage": number
+}
+
+Job Role: ${job.role}
+Description: ${job.description}
+Skills Required: ${job.skillsRequired?.join(", ") || "N/A"}
+Eligibility CGPA: ${job.eligibility?.cgpa || "N/A"}
+
+Resume:
+${resumeText}
+`;
+
+      // 🔹 6. Call Gemini
       const aiResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents:[
-          prompt,
-          {
-            inlineData: {
-              data: pdfBase64,
-              mimeType: "application/pdf"
-            }
-          }
-        ],
+        model: "gemini-2.5-flash",
+        contents: [prompt],
         config: {
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              matchPercentage: { type: Type.INTEGER }
+              matchPercentage: { type: Type.INTEGER },
             },
-            required:["matchPercentage"]
-          }
-        }
+            required: ["matchPercentage"],
+          },
+        },
       });
 
-      // 4. Extract Score
-      const result = JSON.parse(aiResponse.text);
-      score = result.matchPercentage;
+      console.log("AI RAW RESPONSE:", aiResponse.text);
 
+      // 🔹 7. Safe JSON Parse
+      let result;
+      try {
+        result = JSON.parse(aiResponse.text);
+      } catch (parseError) {
+        console.error("Invalid JSON:", aiResponse.text);
+        return res.status(500).json({
+          message: "AI returned invalid format.",
+        });
+      }
+
+      // 🔹 8. Validate Score
+      if (typeof result.matchPercentage !== "number") {
+        return res.status(500).json({
+          message: "Invalid match score from AI.",
+        });
+      }
+
+      score = result.matchPercentage;
     } catch (aiError) {
-      console.error("Gemini Matching Error:", aiError);
-      return res.status(500).json({ message: "AI matching failed. Please try again later." });
+      console.error("AI ERROR:", aiError.message);
+
+      return res.status(500).json({
+        message: "AI matching failed. Try again later.",
+        error: aiError.message,
+      });
     }
 
-    // 5. Save Score to Database
+    // 🔹 9. Save to DB
     const match = await MatchScore.findOneAndUpdate(
       { studentId, jobId },
       { matchPercentage: score },
       { upsert: true, new: true }
     );
 
-    res.json({ matchPercentage: match.matchPercentage, message: "Match calculated successfully!" });
+    return res.json({
+      matchPercentage: match.matchPercentage,
+      message: "Match calculated successfully!",
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("SERVER ERROR:", err);
+
+    return res.status(500).json({
+      message: err.message || "Server error",
+    });
   }
 };
-
 export const getStudentApplications = async (req, res) => {
   try {
     const studentId = req.user.id; // Comes from authMiddleware
