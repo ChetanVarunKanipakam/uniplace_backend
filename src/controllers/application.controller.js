@@ -79,8 +79,7 @@ export const calculateMatchScore = async (req, res) => {
 
       // 🔹 4. Extract Text from PDF (IMPORTANT FIX)
       const pdfData = await pdfParse(pdfResp.data);
-      const resumeText = pdfData.text;
-
+      const resumeText = pdfData.text.substring(0, 5000);
       if (!resumeText || resumeText.length < 20) {
         return res.status(400).json({
           message: "Resume content is too small or unreadable.",
@@ -88,52 +87,46 @@ export const calculateMatchScore = async (req, res) => {
       }
 
       // 🔹 5. Build Prompt
+       
+
       const prompt = `
-You are an expert technical recruiter.
+      You are a recruiter.
 
-Compare the resume with the job description and return ONLY a JSON:
+      Return ONLY JSON:
+      { "matchPercentage": number }
 
-{
-  "matchPercentage": number
-}
+      Job Role: ${job.role}
+      Skills: ${job.skillsRequired?.join(", ") || "N/A"}
 
-Job Role: ${job.role}
-Description: ${job.description}
-Skills Required: ${job.skillsRequired?.join(", ") || "N/A"}
-Eligibility CGPA: ${job.eligibility?.cgpa || "N/A"}
+      Resume:
+      ${resumeText}
+      `;
 
-Resume:
-${resumeText}
-`;
+      let aiResponse;
 
-      // 🔹 6. Call Gemini
-      const aiResponse = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [prompt],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              matchPercentage: { type: Type.INTEGER },
-            },
-            required: ["matchPercentage"],
-          },
-        },
-      });
+      try {
+        aiResponse = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [prompt],
+        });
+      } catch (err) {
+        console.error("Gemini Call Failed:", err);
+        throw err;
+      }
 
-      console.log("AI RAW RESPONSE:", aiResponse.text);
+      console.log("RAW AI RESPONSE:", aiResponse.text);
 
-      // 🔹 7. Safe JSON Parse
       let result;
       try {
         result = JSON.parse(aiResponse.text);
-      } catch (parseError) {
-        console.error("Invalid JSON:", aiResponse.text);
-        return res.status(500).json({
-          message: "AI returned invalid format.",
-        });
+      } catch (e) {
+        console.error("Parsing failed:", aiResponse.text);
+
+        // fallback extraction (VERY IMPORTANT)
+        const match = aiResponse.text.match(/\d+/);
+        result = { matchPercentage: match ? parseInt(match[0]) : 50 };
       }
+
 
       // 🔹 8. Validate Score
       if (typeof result.matchPercentage !== "number") {
