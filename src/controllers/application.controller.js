@@ -5,8 +5,10 @@ import Job from "../models/Job.js";
 import MatchScore from "../models/MatchScore.js";
 import { GoogleGenAI, Type } from "@google/genai";
 import axios from "axios";
-import pdfParse from "pdf-parse";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
 
+const pdfParse = require("pdf-parse");
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 export const applyToCompany = async (req, res) => {
   try {
