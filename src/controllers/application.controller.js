@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 
 const pdfParse = require("pdf-parse");
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+console.log(process.env.GEMINI_API_KEY);
 export const applyToCompany = async (req, res) => {
   try {
     const studentId = req.user?.id;
