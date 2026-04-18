@@ -1,54 +1,73 @@
 import Application from "../models/Application.js";
 import User from "../models/User.js";
 import Company from "../models/Company.js";
-import Job from "../models/Job.js"; 
+import Job from "../models/Job.js";
 import MatchScore from "../models/MatchScore.js";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import axios from "axios";
 import { createRequire } from "module";
-const require = createRequire(import.meta.url);
 
+// 🔥 FIX: Properly load pdf-parse in ESM
+const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
+
+// Initialize Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-console.log(process.env.GEMINI_API_KEY);
+
+/* =======================================================
+   APPLY TO COMPANY
+======================================================= */
 export const applyToCompany = async (req, res) => {
   try {
     const studentId = req.user?.id;
     const { companyId, jobId, resumeUrl } = req.body;
 
     const existing = await Application.findOne({ studentId, jobId });
-    if (existing) return res.status(400).json({ message: "Already applied" });
+    if (existing) {
+      return res.status(400).json({ message: "Already applied" });
+    }
 
-    // Create application starting at Round 1
-    const app = await Application.create({ 
-        studentId, 
-        companyId, 
-        jobId, 
-        resumeUrl,
-        currentRound: 1, 
-        status: "applied" 
+    const app = await Application.create({
+      studentId,
+      companyId,
+      jobId,
+      resumeUrl,
+      currentRound: 1,
+      status: "applied",
     });
 
-    res.status(201).json({ message: "Applied successfully", application: app });
+    res.status(201).json({
+      message: "Applied successfully",
+      application: app,
+    });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 };
 
-
+/* =======================================================
+   GET MATCH SCORE
+======================================================= */
 export const getMatchScore = async (req, res) => {
   try {
-    const match = await MatchScore.findOne({ studentId: req.user.id, jobId: req.params.jobId });
-    if (!match) return res.status(200).json({ matchPercentage: null });
+    const match = await MatchScore.findOne({
+      studentId: req.user.id,
+      jobId: req.params.jobId,
+    });
+
+    if (!match) {
+      return res.status(200).json({ matchPercentage: null });
+    }
+
     res.json({ matchPercentage: match.matchPercentage });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-
-
-
+/* =======================================================
+   CALCULATE MATCH SCORE (FIXED)
+======================================================= */
 export const calculateMatchScore = async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -71,74 +90,87 @@ export const calculateMatchScore = async (req, res) => {
     let score = 0;
 
     try {
-      // 🔹 3. Download Resume
+      /* ==========================================
+         3. DOWNLOAD RESUME
+      ========================================== */
       console.log("Fetching Resume:", user.resumeUrl);
 
       const pdfResp = await axios.get(user.resumeUrl, {
         responseType: "arraybuffer",
       });
 
-      // 🔹 4. Extract Text from PDF (IMPORTANT FIX)
-      const pdfData = await pdfParse(pdfResp.data);
-      const resumeText = pdfData.text.substring(0, 5000);
+      const dataBuffer = Buffer.from(pdfResp.data);
+
+      /* ==========================================
+         4. PARSE PDF (FIXED)
+      ========================================== */
+      const pdfData = await pdfParse(dataBuffer);
+
+      const resumeText = pdfData.text?.substring(0, 5000) || "";
+
       if (!resumeText || resumeText.length < 20) {
         return res.status(400).json({
           message: "Resume content is too small or unreadable.",
         });
       }
 
-      // 🔹 5. Build Prompt
-       
-
+      /* ==========================================
+         5. BUILD PROMPT
+      ========================================== */
       const prompt = `
-      You are a recruiter.
+          Analyze the following resume and compare it to the job description.
+          Return ONLY valid JSON. No explanation.
 
-      Return ONLY JSON:
-      { "matchPercentage": number }
+          FORMAT:
+          { "matchPercentage": number }
 
-      Job Role: ${job.role}
-      Skills: ${job.skillsRequired?.join(", ") || "N/A"}
+          Job Role: ${job.role}
+          Skills: ${job.skillsRequired?.join(", ") || "N/A"}
 
-      Resume:
-      ${resumeText}
-      `;
+          Resume:
+          """${resumeText}"""
+          `;
 
-      let aiResponse;
+      /* ==========================================
+         6. CALL GEMINI
+      ========================================== */
+      const aiResponse = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [prompt],
+      });
 
-      try {
-        aiResponse = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [prompt],
-        });
-      } catch (err) {
-        console.error("Gemini Call Failed:", err);
-        throw err;
-      }
+      const rawText =
+        typeof aiResponse.text === "function"
+          ? aiResponse.text()
+          : aiResponse.text;
 
-      console.log("RAW AI RESPONSE:", aiResponse.text);
+      console.log("RAW AI RESPONSE:", rawText);
 
+      /* ==========================================
+         7. PARSE AI RESPONSE
+      ========================================== */
       let result;
-      try {
-        result = JSON.parse(aiResponse.text);
-      } catch (e) {
-        console.error("Parsing failed:", aiResponse.text);
 
-        // fallback extraction (VERY IMPORTANT)
-        const match = aiResponse.text.match(/\d+/);
-        result = { matchPercentage: match ? parseInt(match[0]) : 50 };
+      try {
+        const cleanJson = rawText.replace(/```json|```/g, "").trim();
+        result = JSON.parse(cleanJson);
+      } catch (e) {
+        console.error("JSON parse failed. Raw:", rawText);
+
+        // fallback: extract number
+        const match = rawText.match(/\d+/);
+        result = {
+          matchPercentage: match ? parseInt(match[0]) : 50,
+        };
       }
 
-
-      // 🔹 8. Validate Score
       if (typeof result.matchPercentage !== "number") {
-        return res.status(500).json({
-          message: "Invalid match score from AI.",
-        });
+        throw new Error("Invalid AI response format");
       }
 
       score = result.matchPercentage;
     } catch (aiError) {
-      console.error("AI ERROR:", aiError.message);
+      console.error("AI/PDF ERROR:", aiError);
 
       return res.status(500).json({
         message: "AI matching failed. Try again later.",
@@ -146,7 +178,9 @@ export const calculateMatchScore = async (req, res) => {
       });
     }
 
-    // 🔹 9. Save to DB
+    /* ==========================================
+       8. SAVE SCORE
+    ========================================== */
     const match = await MatchScore.findOneAndUpdate(
       { studentId, jobId },
       { matchPercentage: score },
@@ -165,15 +199,22 @@ export const calculateMatchScore = async (req, res) => {
     });
   }
 };
+
+/* =======================================================
+   GET STUDENT APPLICATIONS
+======================================================= */
 export const getStudentApplications = async (req, res) => {
   try {
-    const studentId = req.user.id; // Comes from authMiddleware
-    
+    const studentId = req.user.id;
+
     const apps = await Application.find({ studentId })
       .populate({
-        path: 'jobId',
-        select: 'role companyId rounds deadline',
-        populate: { path: 'companyId', select: 'name photoUrl' }
+        path: "jobId",
+        select: "role companyId rounds deadline",
+        populate: {
+          path: "companyId",
+          select: "name photoUrl",
+        },
       })
       .sort({ createdAt: -1 });
 
@@ -182,29 +223,52 @@ export const getStudentApplications = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-// recruiter/admin can fetch applications for a company
+
+/* =======================================================
+   GET APPLICATIONS BY COMPANY
+======================================================= */
 export const getApplicationsByCompany = async (req, res) => {
   try {
     const { companyId } = req.params;
-    const apps = await Application.find({ companyId }).populate("studentId", "name email branch cgpa resumeUrl");
+
+    const apps = await Application.find({ companyId }).populate(
+      "studentId",
+      "name email branch cgpa resumeUrl"
+    );
+
     res.json(apps);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 };
 
-// optional: update application status (shortlist/select)
+/* =======================================================
+   UPDATE APPLICATION STATUS
+======================================================= */
 export const updateApplicationStatus = async (req, res) => {
   try {
-    if (req.user?.role !== "admin" && req.user?.role !== "recruiter") return res.status(403).json({ message: "Forbidden" });
+    if (req.user?.role !== "admin" && req.user?.role !== "recruiter") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
 
     const { id } = req.params;
     const { status } = req.body;
-    const allowed = ["applied", "shortlisted", "selected", "rejected"];
-    if (!allowed.includes(status)) return res.status(400).json({ message: "Invalid status" });
 
-    const app = await Application.findByIdAndUpdate(id, { status }, { new: true });
-    res.json({ message: "Status updated", application: app });
+    const allowed = ["applied", "shortlisted", "selected", "rejected"];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+
+    const app = await Application.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true }
+    );
+
+    res.json({
+      message: "Status updated",
+      application: app,
+    });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
